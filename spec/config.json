@@ -1,0 +1,6 @@
+{
+    "process": {
+        "args": ["echo", "Hello, world!"],
+        "cwd": "/"
+    }
+}
