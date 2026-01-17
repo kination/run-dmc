@@ -1,5 +1,6 @@
 mod container;
 mod oci;
+mod state;
 
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
@@ -26,11 +27,25 @@ enum Commands {
         bundle: PathBuf,
         #[arg(required = true)]
         container_id: String,
+        #[arg(long)]
+        pid_file: Option<PathBuf>,
     },
     #[command(about = "Start a container payload")]
     Start {
         #[arg(required = true)]
         container_id: String,
+    },
+    #[command(about = "Query the state of a container")]
+    State {
+        #[arg(required = true)]
+        container_id: String,
+    },
+    #[command(about = "Send a signal to the container's init process")]
+    Kill {
+        #[arg(required = true)]
+        container_id: String,
+        #[arg(required = true)]
+        signal: String,
     },
     #[command(about = "Delete a container")]
     Delete {
@@ -47,17 +62,23 @@ fn main() -> Result<()> {
         eprintln!("Logging to {:?}", log_path);
     }
 
+    let root_dir = cli.root.unwrap_or_else(|| PathBuf::from("/run/rundmc"));
+
     match cli.command {
-        Commands::Create { bundle, container_id } => {
-            container::create(bundle, container_id)?;
+        Commands::Create { bundle, container_id, pid_file } => {
+            container::create(bundle, container_id, root_dir, pid_file)?;
         }
         Commands::Start { container_id } => {
-            println!("Starting container: {}", container_id);
-            // TODO: Signal init process to start
+            container::start(&container_id, &root_dir)?;
+        }
+        Commands::State { container_id } => {
+            container::state(&container_id, &root_dir)?;
+        }
+        Commands::Kill { container_id, signal } => {
+            container::kill(&container_id, &signal, &root_dir)?;
         }
         Commands::Delete { container_id } => {
-            println!("Deleting container: {}", container_id);
-            // TODO: Cleanup resources
+            container::delete(&container_id, &root_dir)?;
         }
     }
     Ok(())

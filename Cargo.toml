@@ -7,7 +7,7 @@ edition = "2024"
 serde = { version = "1.0", features = ["derive"]}
 serde_json = "1.0"
 clap = { version = "4.0", features = ["derive"] }
-nix = { version = "0.28.0", features = ["sched"] }
+nix = { version = "0.28.0", features = ["sched", "signal"] }
 libc = "0.2"
 log = "0.4"
 anyhow = "1.0"

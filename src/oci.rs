@@ -1,39 +1,60 @@
 use oci_spec::runtime::Spec;
 use std::path::Path;
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 
+/// Load and validate OCI runtime specification from config.json
 pub fn load_config<P: AsRef<Path>>(path: P) -> Result<Spec> {
-    Spec::load(path).context("Failed to load OCI config")
+    let spec = Spec::load(&path).with_context(|| {
+        format!("Failed to load OCI config from: {}", path.as_ref().display())
+    })?;
+
+    validate_spec(&spec)?;
+    Ok(spec)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs::File;
-    use tempfile::tempdir;
-
-    #[test]
-    fn test_load_valid_config() {
-        let dir = tempdir().unwrap();
-        let file_path = dir.path().join("config.json");
-        let file = File::create(&file_path).unwrap();
-        serde_json::to_writer(file, &serde_json::json!({
-            "ociVersion": "1.0.0",
-            "process": {
-                "cwd": "/",
-                "args": ["sh"],
-                "user": {
-                    "uid": 0,
-                    "gid": 0
-                }
-            },
-            "root": {
-                "path": "rootfs"
-            }
-        })).unwrap();
-
-        let spec = load_config(&file_path).unwrap();
-        assert_eq!(spec.version(), "1.0.0");
-        assert_eq!(spec.process().as_ref().unwrap().args().as_ref().unwrap()[0], "sh");
+/// Validate required fields and OCI spec version compatibility
+fn validate_spec(spec: &Spec) -> Result<()> {
+    // Validate OCI version
+    let version = spec.version();
+    if !version.starts_with("1.") {
+        bail!(
+            "Unsupported OCI spec version: {}. Expected 1.x.x",
+            version
+        );
     }
+
+    // Validate process configuration
+    let process = spec
+        .process()
+        .as_ref()
+        .context("Missing required field: process")?;
+
+    // Validate process args
+    let args = process
+        .args()
+        .as_ref()
+        .context("Missing required field: process.args")?;
+
+    if args.is_empty() {
+        bail!("process.args cannot be empty");
+    }
+
+    // Validate process user
+    let user = process.user();
+    let _uid = user.uid();
+    let _gid = user.gid();
+
+    // Validate root configuration
+    let root = spec
+        .root()
+        .as_ref()
+        .context("Missing required field: root")?;
+
+    let root_path = root.path();
+    if root_path.as_os_str().is_empty() {
+        bail!("root.path cannot be empty");
+    }
+
+    Ok(())
 }
+

@@ -1,8 +1,8 @@
-# run-dmc
+# run_dmc
 
 __Until now, this project is for research, not for production__
 
-This project is another "Open Container Initiative (OCI) Runtime" written in Rust, specifically optimized for **Data Engineering** workloads.
+This project __run_dmc__(=> 'Runtime' for 'Data Management Container') is another "Open Container Initiative (OCI) Runtime" written in Rust, specifically optimized for **Data Engineering** workloads.
 
 ## Goal of research
 - **Performance First**: Engineered for ultra-low latency (<50ms startup) and minimal memory footprint.
