@@ -46,7 +46,12 @@ pub fn create(
     let process = spec.process().as_ref().context("No process defined in config")?;
     let args = process.args().as_ref().context("No args defined in process")?;
 
-    println!("Creating container {} with command: {:?}", container_id, args);
+    log::info!(
+        "Creating container: id={}, command={:?}, bundle={:?}",
+        container_id,
+        args,
+        bundle
+    );
 
     // Fork the container process
     match unsafe { fork() } {
@@ -74,9 +79,10 @@ pub fn create(
             if let Some(pid_path) = pid_file {
                 fs::write(&pid_path, format!("{}", pid))
                     .with_context(|| format!("Failed to write PID file: {}", pid_path.display()))?;
+                log::debug!("PID file written: {:?}", pid_path);
             }
 
-            println!("Container {} created with PID {}", container_id, pid);
+            log::info!("Container created: id={}, pid={}, status=created", container_id, pid);
             Ok(())
         }
         Err(e) => bail!("Fork failed: {}", e),
@@ -109,13 +115,15 @@ pub fn start(container_id: &str, root: &PathBuf) -> Result<()> {
     state.status = ContainerStatus::Running;
     state.save(root)?;
 
-    println!("Container {} started", container_id);
+    log::info!("Container started: id={}, pid={:?}, status=running", container_id, state.pid);
     Ok(())
 }
 
 /// Query container state (OCI state command)
 pub fn state(container_id: &str, root: &PathBuf) -> Result<()> {
     let state = ContainerState::load(root, container_id)?;
+
+    log::debug!("Querying state: id={}, status={:?}", container_id, state.status);
 
     // Output state as JSON to stdout (per OCI spec)
     let json = serde_json::to_string_pretty(&state)
@@ -126,7 +134,7 @@ pub fn state(container_id: &str, root: &PathBuf) -> Result<()> {
 }
 
 /// Send a signal to container (OCI kill command)
-pub fn kill(container_id: &str, signal_str: &str, root: &PathBuf) -> Result<()> {
+pub fn kill(container_id: &str, signal_str: &str, root: &PathBuf, _all: bool) -> Result<()> {
     let state = ContainerState::load(root, container_id)?;
 
     let pid = state.pid.context("Container has no PID")?;
@@ -139,7 +147,7 @@ pub fn kill(container_id: &str, signal_str: &str, root: &PathBuf) -> Result<()> 
     send_signal(nix_pid, signal)
         .with_context(|| format!("Failed to send signal {} to PID {}", signal_str, pid))?;
 
-    println!("Signal {} sent to container {}", signal_str, container_id);
+    log::info!("Signal sent: id={}, signal={}, pid={}", container_id, signal_str, pid);
 
     // If we sent SIGKILL or the process might have terminated, check if we should update state
     if signal == Signal::SIGKILL || signal == Signal::SIGTERM {
@@ -151,23 +159,40 @@ pub fn kill(container_id: &str, signal_str: &str, root: &PathBuf) -> Result<()> 
 }
 
 /// Delete a container (OCI delete command)
-pub fn delete(container_id: &str, root: &PathBuf) -> Result<()> {
+pub fn delete(container_id: &str, root: &PathBuf, force: bool) -> Result<()> {
     let state = ContainerState::load(root, container_id)?;
+
+    log::debug!(
+        "Deleting container: id={}, status={:?}, force={}",
+        container_id,
+        state.status,
+        force
+    );
 
     // Validate state - can only delete stopped containers
     match state.status {
         ContainerStatus::Stopped => {
-            // Valid - can delete
+            log::debug!("Container is stopped, safe to delete");
         }
         ContainerStatus::Created => {
-            // Some runtimes allow deleting created containers
-            // We'll allow it too
+            log::debug!("Container is in created state, allowing deletion");
         }
         ContainerStatus::Running => {
-            bail!("Cannot delete running container {}. Stop it first.", container_id);
+            if !force {
+                bail!("Cannot delete running container {}. Stop it first.", container_id);
+            }
+            log::warn!("Force deleting running container: id={}", container_id);
+            // Force delete - kill the process first
+            if let Some(pid) = state.pid {
+                let _ = send_signal(Pid::from_raw(pid), Signal::SIGKILL);
+                log::debug!("Sent SIGKILL to pid={}", pid);
+            }
         }
         ContainerStatus::Creating => {
-            bail!("Cannot delete container {} that is being created", container_id);
+            if !force {
+                bail!("Cannot delete container {} that is being created", container_id);
+            }
+            log::warn!("Force deleting container in creating state: id={}", container_id);
         }
     }
 
@@ -180,7 +205,7 @@ pub fn delete(container_id: &str, root: &PathBuf) -> Result<()> {
     // Delete state
     ContainerState::delete(root, container_id)?;
 
-    println!("Container {} deleted", container_id);
+    log::info!("Container deleted: id={}", container_id);
     Ok(())
 }
 
