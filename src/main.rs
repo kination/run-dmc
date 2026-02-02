@@ -1,6 +1,8 @@
 mod container;
 mod logging;
+mod namespace;
 mod oci;
+mod rootfs;
 mod state;
 
 use clap::{Parser, Subcommand};
@@ -27,9 +29,9 @@ struct Cli {
 enum Commands {
     #[command(about = "Create container")]
     Create {
-        #[arg(short, long)]
+        #[arg(short = 'b', long)]
         bundle: PathBuf,
-        #[arg(required = true)]
+        #[arg(short = 'c', required = true)]
         container_id: String,
         #[arg(long)]
         pid_file: Option<PathBuf>,

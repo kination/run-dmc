@@ -2,3 +2,6 @@
 pub mod oci;
 pub mod state;
 pub mod container;
+pub mod namespace;
+pub mod rootfs;
+pub mod logging;
