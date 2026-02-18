@@ -3,6 +3,7 @@ mod logging;
 mod namespace;
 mod oci;
 mod rootfs;
+mod cgroup;
 mod state;
 
 use clap::{Parser, Subcommand};

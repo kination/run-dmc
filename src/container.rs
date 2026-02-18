@@ -8,6 +8,7 @@ use crate::oci::load_config;
 use crate::state::{ContainerState, ContainerStatus};
 use crate::namespace::{NamespaceConfig, setup_namespaces, set_hostname};
 use crate::rootfs::{RootfsConfig, setup_rootfs, setup_mounts};
+use crate::cgroup::{CgroupConfig, CgroupManager, ensure_rundmc_namespace};
 
 /// Create a container (OCI create command)
 /// Set up container environment, but not starting the process
@@ -53,6 +54,11 @@ pub fn create(
 
     log::info!("Namespace config: {:?}", ns_config);
     log::info!("Rootfs config: {:?}", rootfs_config);
+
+    let cgroup_config = CgroupConfig::from_oci_spec(&spec, &container_id)?;
+    log::info!("Cgroup config: {:?}", cgroup_config);
+
+    ensure_rundmc_namespace()?;
 
     // Create synchronization pipe to separate create/start
     // Child will block reading from this pipe until 'start' command
@@ -100,6 +106,22 @@ pub fn create(
                 .context("Failed to save sync fd")?;
 
             state.save(&root)?;
+
+            // Setup cgroup and add process
+            match CgroupManager::new(&container_id) {
+                Ok(cgroup_manager) => {
+                    if let Err(e) = cgroup_manager.setup(&cgroup_config) {
+                        log::warn!("Failed to setup cgroup: {}", e);
+                    } else if let Err(e) = cgroup_manager.add_process(pid) {
+                        log::warn!("Failed to add process to cgroup: {}", e);
+                    } else {
+                        log::info!("Cgroup setup successful");
+                    }
+                }
+                Err(e) => {
+                    log::warn!("Cgroup not available (non-fatal): {}", e);
+                }
+            }
 
             // Write PID file if requested
             if let Some(pid_path) = pid_file {
@@ -346,8 +368,19 @@ pub fn delete(container_id: &str, root: &PathBuf, force: bool) -> Result<()> {
         }
     }
 
-    // TODO: Clean up resources:
-    // - Remove cgroups
+    // Clean up resources and cgroups
+    match CgroupManager::new(container_id) {
+        Ok(cgroup_manager) => {
+            if let Err(e) = cgroup_manager.cleanup() {
+                log::warn!("Failed to cleanup cgroup: {}", e);
+            }
+        }
+        Err(e) => {
+            log::debug!("Cgroup cleanup skipped: {}", e);
+        }
+    }
+
+    // TODO: Additional cleanup:
     // - Unmount filesystems
     // - Clean up network interfaces
     // - etc.
