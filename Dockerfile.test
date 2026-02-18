@@ -1,0 +1,13 @@
+FROM rust:latest
+
+WORKDIR /app
+
+# Cache dependencies layer (invalidated only when Cargo.toml changes)
+COPY Cargo.toml Cargo.lock* ./
+RUN mkdir -p src && echo "fn main() {}" > src/main.rs && \
+    cargo fetch && \
+    rm -rf src
+
+COPY . .
+
+CMD ["cargo", "test", "--", "--nocapture"]

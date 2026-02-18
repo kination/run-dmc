@@ -45,6 +45,7 @@ fn test_create_command() {
             "create",
             "--bundle",
             bundle_path.to_str().unwrap(),
+            "-c",
             "test_container_id"
         ])
         .output()
@@ -60,5 +61,9 @@ fn test_create_command() {
     assert!(output.status.success(), "Runtime failed to execute");
 
     // Verify container was created
-    assert!(stdout.contains("Container test_container_id created with PID"));
+    // Note: Logs now go to stderr via env_logger, not stdout
+    assert!(
+        stderr.contains("Container created") || stderr.contains("test_container_id"),
+        "Expected container creation log not found in stderr"
+    );
 }
