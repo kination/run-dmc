@@ -1,7 +1,7 @@
 /// Cgroups (Control Groups) to provide resource limiting, prioritization, and accounting
 /// for container processes.
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -265,10 +265,25 @@ pub fn ensure_rundmc_namespace() -> Result<()> {
     let rundmc_path = PathBuf::from(CGROUP_V2_MOUNT).join("rundmc");
 
     if !rundmc_path.exists() {
-        fs::create_dir_all(&rundmc_path)
-            .with_context(|| format!("Failed to create rundmc cgroup namespace: {:?}", rundmc_path))?;
-
-        log::info!("Created rundmc cgroup namespace: {:?}", rundmc_path);
+        match fs::create_dir_all(&rundmc_path) {
+            Ok(()) => {
+                log::info!("Created rundmc cgroup namespace: {:?}", rundmc_path);
+            }
+            // EROFS (30) = read-only filesystem, EACCES (13) = permission denied.
+            // Both indicate we lack cgroup write access (e.g. non-privileged container).
+            // Degrade gracefully so the rest of container creation can continue.
+            Err(e) if e.raw_os_error() == Some(30) || e.kind() == std::io::ErrorKind::PermissionDenied => {
+                log::warn!(
+                    "Cgroup filesystem is not writable, skipping namespace creation \
+                     (run with --privileged to enable cgroup support): {}",
+                    e
+                );
+            }
+            Err(e) => {
+                return Err(e)
+                    .with_context(|| format!("Failed to create rundmc cgroup namespace: {:?}", rundmc_path));
+            }
+        }
     }
 
     Ok(())
